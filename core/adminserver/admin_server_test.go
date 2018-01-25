@@ -59,7 +59,7 @@ func TestCreateRead(t *testing.T) {
 		t.Fatalf("Failed to create trillian log server: %v", err)
 	}
 
-	svr := New(storage, logEnv.Admin, mapEnv.Admin, vrfKeyGen)
+	svr := New(logEnv.Log, mapEnv.Map, logEnv.Admin, mapEnv.Admin, storage, vrfKeyGen)
 
 	for _, tc := range []struct {
 		domainID                 string

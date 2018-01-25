@@ -102,35 +102,6 @@ func (s *Sequencer) Close() {
 	}
 }
 
-// Initialize inserts the object hash of an empty struct into the log if it is empty.
-// This keeps the log leaves in-sync with the map which starts off with an
-// empty log root at map revision 0.
-func (s *Sequencer) Initialize(ctx context.Context, logID, mapID int64) error {
-	logRoot, err := s.tlog.GetLatestSignedLogRoot(ctx, &trillian.GetLatestSignedLogRootRequest{
-		LogId: logID,
-	})
-	if err != nil {
-		return fmt.Errorf("GetLatestSignedLogRoot(%v): %v", logID, err)
-	}
-	mapRoot, err := s.tmap.GetSignedMapRoot(ctx, &trillian.GetSignedMapRootRequest{
-		MapId: mapID,
-	})
-	if err != nil {
-		return fmt.Errorf("GetSignedMapRoot(%v): %v", mapID, err)
-	}
-
-	// If the tree is empty and the map is empty,
-	// add the empty map root to the log.
-	if logRoot.GetSignedLogRoot().GetTreeSize() == 0 &&
-		mapRoot.GetMapRoot().GetMapRevision() == 0 {
-		glog.Infof("Initializing Trillian Log %v with empty map root", logID)
-		if err := queueLogLeaf(ctx, s.tlog, logID, mapRoot.GetMapRoot()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ListenForNewDomains starts receivers for all domains and periodically checks for new domains.
 func (s *Sequencer) ListenForNewDomains(ctx context.Context, refresh time.Duration) error {
 	ticker := time.NewTicker(refresh)
@@ -165,11 +136,6 @@ func (s *Sequencer) ListenForNewDomains(ctx context.Context, refresh time.Durati
 func (s *Sequencer) NewReceiver(ctx context.Context, domain *domain.Domain, minInterval, maxInterval time.Duration) (mutator.Receiver, error) {
 	cctx, cancel := context.WithTimeout(ctx, minInterval)
 	defer cancel()
-	if err := s.Initialize(cctx, domain.LogID, domain.MapID); err != nil {
-		return nil, fmt.Errorf("initialize of log %v and map %v failed: %v",
-			domain.LogID, domain.MapID, err)
-	}
-	var rootResp *trillian.GetSignedMapRootResponse
 	rootResp, err := s.tmap.GetSignedMapRoot(cctx, &trillian.GetSignedMapRootRequest{
 		MapId: domain.MapID,
 	})
@@ -338,9 +304,16 @@ func (s *Sequencer) createEpoch(ctx context.Context, domain *domain.Domain, msgs
 	return nil
 }
 
+// CanonicalSignedMapRoot returns a canonical serialization of the SignedMapRoot.
+// TODO(gbelvin): Move this function to the Trillian repo.
+// TODO(gbelvin): Replace with TLS serialization
+func CanonicalSignedMapRoot(smr *trillian.SignedMapRoot) ([]byte, error) {
+	return json.Marshal(smr)
+}
+
 // TODO(gdbelvin): Add leaf at a specific index. trillian#423
 func queueLogLeaf(ctx context.Context, tlog trillian.TrillianLogClient, logID int64, smr *trillian.SignedMapRoot) error {
-	smrJSON, err := json.Marshal(smr)
+	smrJSON, err := CanonicalSignedMapRoot(smr)
 	if err != nil {
 		return err
 	}
