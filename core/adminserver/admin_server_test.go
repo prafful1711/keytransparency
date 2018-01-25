@@ -50,7 +50,16 @@ func TestCreateRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create trillian map server: %v", err)
 	}
-	svr := New(storage, mapEnv.Admin, mapEnv.Admin, vrfKeyGen)
+
+	// Log server
+	numSequencers := 1
+	unused := ""
+	logEnv, err := integration.NewLogEnv(ctx, numSequencers, unused)
+	if err != nil {
+		t.Fatalf("Failed to create trillian log server: %v", err)
+	}
+
+	svr := New(storage, logEnv.Admin, mapEnv.Admin, vrfKeyGen)
 
 	for _, tc := range []struct {
 		domainID                 string

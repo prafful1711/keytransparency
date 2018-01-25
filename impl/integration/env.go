@@ -24,6 +24,8 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"google.golang.org/grpc"
+
 	"github.com/google/keytransparency/core/adminserver"
 	"github.com/google/keytransparency/core/authentication"
 	"github.com/google/keytransparency/core/client/grpcc"
@@ -34,23 +36,19 @@ import (
 	"github.com/google/keytransparency/core/mutator"
 	"github.com/google/keytransparency/core/mutator/entry"
 	"github.com/google/keytransparency/core/sequencer"
-
 	"github.com/google/keytransparency/impl/authorization"
 	"github.com/google/keytransparency/impl/sql/domain"
 	"github.com/google/keytransparency/impl/sql/mutationstorage"
-
 	"github.com/google/trillian/crypto/keys/der"
 	"github.com/google/trillian/crypto/keyspb"
 	"github.com/google/trillian/merkle/coniks"
 	"github.com/google/trillian/storage/testdb"
 
-	"google.golang.org/grpc"
-
 	pb "github.com/google/keytransparency/core/api/v1/keytransparency_proto"
 	domaindef "github.com/google/keytransparency/core/domain"
 	_ "github.com/google/trillian/merkle/coniks"    // Register hasher
 	_ "github.com/google/trillian/merkle/objhasher" // Register hasher
-	maptest "github.com/google/trillian/testonly/integration"
+	ttest "github.com/google/trillian/testonly/integration"
 	_ "github.com/mattn/go-sqlite3" // Use sqlite database for testing.
 )
 
@@ -71,7 +69,8 @@ func Listen() (string, net.Listener, error) {
 // Env holds a complete testing environment for end-to-end tests.
 type Env struct {
 	*integration.Env
-	mapEnv     *maptest.MapEnv
+	mapEnv     *ttest.MapEnv
+	logEnv     *ttest.LogEnv
 	grpcServer *grpc.Server
 	grpcCC     *grpc.ClientConn
 	db         *sql.DB
@@ -91,9 +90,17 @@ func NewEnv() (*Env, error) {
 	}
 
 	// Map server
-	mapEnv, err := maptest.NewMapEnv(ctx)
+	mapEnv, err := ttest.NewMapEnv(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("env: failed to create trillian map server: %v", err)
+	}
+
+	// Log server
+	numSequencers := 1
+	unused := ""
+	logEnv, err := ttest.NewLogEnv(ctx, numSequencers, unused)
+	if err != nil {
+		return nil, fmt.Errorf("env: failed to create trillian log server: %v", err)
 	}
 
 	// Configure domain, which creates new map and log trees.
@@ -101,7 +108,7 @@ func NewEnv() (*Env, error) {
 	if err != nil {
 		return nil, fmt.Errorf("env: failed to create domain storage: %v", err)
 	}
-	adminSvr := adminserver.New(domainStorage, mapEnv.Admin, mapEnv.Admin, vrfKeyGen)
+	adminSvr := adminserver.New(domainStorage, logEnv.Admin, mapEnv.Admin, vrfKeyGen)
 	domainPB, err := adminSvr.CreateDomain(ctx, &pb.CreateDomainRequest{
 		DomainId:    domainID,
 		MinInterval: ptypes.DurationProto(1 * time.Second),
@@ -111,8 +118,6 @@ func NewEnv() (*Env, error) {
 		return nil, fmt.Errorf("env: CreateDomain(): %v", err)
 	}
 
-	mapID := domainPB.Map.TreeId
-	logID := domainPB.Log.TreeId
 	mapPubKey, err := der.UnmarshalPublicKey(domainPB.Map.GetPublicKey().GetDer())
 	if err != nil {
 		return nil, fmt.Errorf("env: Failed to load signing keypair: %v", err)
@@ -129,21 +134,20 @@ func NewEnv() (*Env, error) {
 	}
 	auth := authentication.NewFake()
 	authz := authorization.New()
-	tlog := fake.NewTrillianLogClient()
 
 	queue := mutator.MutationQueue(mutations)
-	server := keyserver.New(tlog, mapEnv.Map, mapEnv.Admin,
+	server := keyserver.New(logEnv.Log, mapEnv.Map, mapEnv.Admin,
 		entry.New(), auth, authz, domainStorage, queue, mutations)
 	gsvr := grpc.NewServer()
 	pb.RegisterKeyTransparencyServer(gsvr, server)
 
 	// Sequencer
-	seq := sequencer.New(domainStorage, mapEnv.Map, tlog, entry.New(), mutations, queue)
+	seq := sequencer.New(domainStorage, mapEnv.Map, logEnv.Log, entry.New(), mutations, queue)
 	// Only sequence when explicitly asked with receiver.Flush()
 	d := &domaindef.Domain{
-		DomainID: domainID,
-		LogID:    logID,
-		MapID:    mapID,
+		DomainID: domainPB.DomainId,
+		LogID:    domainPB.Log.TreeId,
+		MapID:    domainPB.Map.TreeId,
 	}
 	receiver := seq.NewReceiver(ctx, d, 60*time.Hour, 60*time.Hour)
 	receiver.Flush(ctx)
