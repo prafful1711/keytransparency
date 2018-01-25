@@ -123,7 +123,7 @@ func (s *Sequencer) Initialize(ctx context.Context, logID, mapID int64) error {
 	// add the empty map root to the log.
 	if logRoot.GetSignedLogRoot().GetTreeSize() == 0 &&
 		mapRoot.GetMapRoot().GetMapRevision() == 0 {
-		glog.Infof("Initializing Trillian Log with empty map root")
+		glog.Infof("Initializing Trillian Log %v with empty map root", logID)
 		if err := queueLogLeaf(ctx, s.tlog, logID, mapRoot.GetMapRoot()); err != nil {
 			return err
 		}
@@ -145,8 +145,13 @@ func (s *Sequencer) ListenForNewDomains(ctx context.Context, refresh time.Durati
 			}
 			for _, d := range domains {
 				if _, ok := s.receivers[d.DomainID]; !ok {
-					glog.Infof("StartSigning domain: %v", d.DomainID)
-					s.receivers[d.DomainID] = s.NewReceiver(ctx, d, d.MinInterval, d.MaxInterval)
+					r, err := s.NewReceiver(ctx, d, d.MinInterval, d.MaxInterval)
+					if err != nil {
+						glog.Errorf("Could not start sequencer for %v: %v. Retry in %v.", d.DomainID, err, refresh)
+
+						continue
+					}
+					s.receivers[d.DomainID] = r
 				}
 			}
 		case <-ctx.Done():
@@ -157,35 +162,27 @@ func (s *Sequencer) ListenForNewDomains(ctx context.Context, refresh time.Durati
 
 // NewReceiver creates a new receiver for a domain.
 // New epochs will be created at least once per maxInterval and as often as minInterval.
-func (s *Sequencer) NewReceiver(ctx context.Context, domain *domain.Domain, minInterval, maxInterval time.Duration) mutator.Receiver {
+func (s *Sequencer) NewReceiver(ctx context.Context, domain *domain.Domain, minInterval, maxInterval time.Duration) (mutator.Receiver, error) {
 	cctx, cancel := context.WithTimeout(ctx, minInterval)
+	defer cancel()
 	if err := s.Initialize(cctx, domain.LogID, domain.MapID); err != nil {
-		glog.Errorf("Initialize() failed: %v", err)
+		return nil, fmt.Errorf("initialize of log %v and map %v failed: %v",
+			domain.LogID, domain.MapID, err)
 	}
 	var rootResp *trillian.GetSignedMapRootResponse
 	rootResp, err := s.tmap.GetSignedMapRoot(cctx, &trillian.GetSignedMapRootRequest{
 		MapId: domain.MapID,
 	})
 	if err != nil {
-		// TODO(gbelvin): I don't think this initialization block is needed anymore.
-		glog.Infof("GetSignedMapRoot failed: %v", err)
-		// Immediately create new epoch and write new sth:
-		empty := []*mutator.QueueMessage{}
-		if err := s.createEpoch(cctx, domain, empty); err != nil {
-			glog.Errorf("CreateEpoch failed: %v", err)
-		}
-		// Request map head again to get the exact time it was created:
-		rootResp, err = s.tmap.GetSignedMapRoot(cctx, &trillian.GetSignedMapRootRequest{
-			MapId: domain.MapID,
-		})
-		if err != nil {
-			glog.Errorf("GetSignedMapRoot failed after CreateEpoch: %v", err)
-		}
+		return nil, fmt.Errorf("cannot start receiver. GetSignedMapRoot(%v): %v",
+			domain.MapID, err)
 	}
-	cancel()
+
 	// Fetch last time from previous map head (as stored in the map server)
 	mapRoot := rootResp.GetMapRoot()
 	last := time.Unix(0, mapRoot.GetTimestampNanos())
+	glog.Infof("Starting receiver for %v. The last revision (%v), was created %v ago.",
+		domain.DomainID, mapRoot.GetMapRevision(), time.Since(last))
 
 	return s.queue.NewReceiver(ctx, last, domain.DomainID, func(mutations []*mutator.QueueMessage) error {
 		return s.createEpoch(ctx, domain, mutations)
@@ -193,7 +190,7 @@ func (s *Sequencer) NewReceiver(ctx context.Context, domain *domain.Domain, minI
 		MaxBatchSize: MaxBatchSize,
 		Period:       minInterval,
 		MaxPeriod:    maxInterval,
-	})
+	}), nil
 }
 
 // toArray returns the first 32 bytes from b.
