@@ -142,7 +142,7 @@ func NewEnv() (*Env, error) {
 	pb.RegisterKeyTransparencyServer(gsvr, server)
 
 	// Sequencer
-	seq := sequencer.New(domainStorage, mapEnv.Map, logEnv.Log, entry.New(), mutations, queue)
+	seq := sequencer.New(logEnv.Log, mapEnv.Map, entry.New(), domainStorage, mutations, queue)
 	// Only sequence when explicitly asked with receiver.Flush()
 	d := &domaindef.Domain{
 		DomainID: domainPB.DomainId,
