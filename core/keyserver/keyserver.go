@@ -183,6 +183,7 @@ func (s *Server) getEntryByRevision(ctx context.Context, sth *tpb.SignedLogRoot,
 			},
 		},
 		Smr:          getResp.GetMapRoot(),
+		LogRoot:      sth,
 		LogInclusion: logInclusion.GetProof().GetHashes(),
 	}, nil
 }
@@ -231,6 +232,8 @@ func (s *Server) ListEntryHistory(ctx context.Context, in *pb.ListEntryHistoryRe
 			LogConsistency: consistencyProof.GetHashes(),
 		})
 		responses[i] = resp
+		// TODO(gbelvin): This is redundant and wasteful. Refactor response API.
+		responses[i].LogConsistency = consistencyProof.GetHashes()
 	}
 
 	nextStart := in.Start + int64(in.PageSize)
