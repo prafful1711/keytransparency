@@ -198,7 +198,7 @@ func TestEmptyGetAndUpdate(ctx context.Context, env *Env, t *testing.T) {
 				}
 				env.Receiver.Flush(tc.ctx)
 				if _, err := env.Client.WaitForUserUpdate(tc.ctx, m); err != nil {
-					t.Errorf("Retry(%v): %v, want nil", m, err)
+					t.Errorf("WaitForUserUpdate(%v): %v, want nil", m, err)
 				}
 			}
 		})
@@ -262,7 +262,7 @@ func TestUpdateValidation(ctx context.Context, env *Env, t *testing.T) {
 			}
 			env.Receiver.Flush(tc.ctx)
 			if _, err := env.Client.WaitForUserUpdate(tc.ctx, m); err != nil {
-				t.Errorf("Retry(%v): %v, want nil", m, err)
+				t.Errorf("WaitForUserUpdate(%v): %v, want nil", m, err)
 			}
 		} else {
 			if got, want := err, grpcc.ErrWait; got == want {
@@ -345,13 +345,19 @@ func (e *Env) setupHistory(ctx context.Context, domain *pb.Domain, userID string
 				PublicKeyData:  p,
 				AuthorizedKeys: authorizedKeys,
 			}
-			_, err := e.Client.Update(ctx, u, signers)
+			m, err := e.Client.Update(ctx, u, signers)
 			// The first update response is always a retry.
 			if got, want := err, grpcc.ErrWait; got != want {
 				return fmt.Errorf("Update(%v, %v)=(_, %v), want (_, %v)", userID, i, got, want)
 			}
+			e.Receiver.Flush(ctx)
+			if _, err := e.Client.WaitForUserUpdate(ctx, m); err != nil {
+				return fmt.Errorf("WaitForUserUpdate(%v): %v, want nil", m, err)
+			}
+		} else {
+			// Create an empty epoch.
+			e.Receiver.Flush(ctx)
 		}
-		e.Receiver.Flush(ctx)
 	}
 	return nil
 }

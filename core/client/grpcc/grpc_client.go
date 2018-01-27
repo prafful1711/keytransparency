@@ -266,7 +266,7 @@ func (c *Client) QueueMutation(ctx context.Context, m *entry.Mutation, signers [
 
 	Vlog.Printf("Sending Update request...")
 	// 2. Queue Mutation
-	_, err := c.cli.UpdateEntry(ctx, req)
+	_, err = c.cli.UpdateEntry(ctx, req)
 	return err
 }
 
