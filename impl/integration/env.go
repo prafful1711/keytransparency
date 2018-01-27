@@ -136,7 +136,7 @@ func NewEnv() (*Env, error) {
 	authz := authorization.New()
 
 	queue := mutator.MutationQueue(mutations)
-	server := keyserver.New(logEnv.Log, mapEnv.Map, mapEnv.Admin,
+	server := keyserver.New(logEnv.Log, mapEnv.Map, logEnv.Admin, mapEnv.Admin,
 		entry.New(), auth, authz, domainStorage, queue, mutations)
 	gsvr := grpc.NewServer()
 	pb.RegisterKeyTransparencyServer(gsvr, server)
