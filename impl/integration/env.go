@@ -178,6 +178,7 @@ func NewEnv() (*Env, error) {
 			Receiver: receiver,
 		},
 		mapEnv:     mapEnv,
+		logEnv:     logEnv,
 		grpcServer: gsvr,
 		grpcCC:     cc,
 		db:         db,
@@ -189,5 +190,6 @@ func (env *Env) Close() {
 	env.grpcCC.Close()
 	env.grpcServer.Stop()
 	env.mapEnv.Close()
+	env.logEnv.Close()
 	env.db.Close()
 }
