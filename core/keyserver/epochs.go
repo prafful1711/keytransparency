@@ -84,7 +84,7 @@ func (s *Server) getEpochByRevision(ctx context.Context, d *domain.Domain, first
 		Revision: revision,
 	})
 	if err != nil {
-		glog.Errorf("GetEpoch(); GetSignedMapRootByRevision(%v, %v): %v", d.MapID, revision, err)
+		glog.Errorf("GetEpoch(): GetSignedMapRootByRevision(%v, %v): %v", d.MapID, revision, err)
 		return nil, err
 	}
 

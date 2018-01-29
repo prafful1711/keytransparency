@@ -122,9 +122,9 @@ func TestMonitor(ctx context.Context, env *Env, t *testing.T) {
 		env.Receiver.Flush(ctx)
 
 		domainID := env.Domain.DomainId
-		cctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		cctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		if err := mon.ProcessLoop(cctx, domainID, tc.queryEpoch-1, 40*time.Millisecond); err != context.DeadlineExceeded {
-			t.Errorf("Monitor could not process mutations: %v", err)
+			t.Errorf("ProcessLoop(): %v", err)
 		}
 		cancel()
 

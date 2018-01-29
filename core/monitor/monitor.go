@@ -141,6 +141,7 @@ func (m *Monitor) ProcessLoop(ctx context.Context, domainID string, startEpoch i
 		revision := pair.B.GetSmr().GetMapRevision()
 		mutations, err := mutCli.EpochMutations(ctx, pair.B)
 		if err != nil {
+			glog.Errorf("monitor: EpochMutations(): %v", err)
 			return err
 		}
 
@@ -169,6 +170,7 @@ func (m *Monitor) ProcessLoop(ctx context.Context, domainID string, startEpoch i
 	errA := <-errc
 	errB := <-errc
 	if err := errA; err != nil {
+		glog.Errorf("monitor: Stream/PairEpochs(): %v", err)
 		return err
 	}
 	return errB
