@@ -244,11 +244,13 @@ func (s *Server) initialize(ctx context.Context, logTree, mapTree *tpb.Tree) err
 		return fmt.Errorf("could not create log client: %v", err)
 	}
 
-	logRoot, err := s.tlog.GetLatestSignedLogRoot(ctx,
-		&tpb.GetLatestSignedLogRootRequest{LogId: logID})
-	if err != nil {
-		return fmt.Errorf("GetLatestSignedLogRoot(%v): %v", logID, err)
+	// Wait for the latest log root to become available.
+	if err := logClient.UpdateRoot(ctx); err != nil {
+		return fmt.Errorf("adminserver: UpdateRoot(): %v", err)
+
 	}
+	logRoot := logClient.Root()
+
 	mapRoot, err := s.tmap.GetSignedMapRoot(ctx,
 		&tpb.GetSignedMapRootRequest{MapId: mapID})
 	if err != nil {
@@ -257,7 +259,7 @@ func (s *Server) initialize(ctx context.Context, logTree, mapTree *tpb.Tree) err
 
 	// If the tree is empty and the map is empty,
 	// add the empty map root to the log.
-	if logRoot.GetSignedLogRoot().GetTreeSize() == 0 &&
+	if logRoot.GetTreeSize() == 0 &&
 		mapRoot.GetMapRoot().GetMapRevision() == 0 {
 		glog.Infof("Initializing Trillian Log %v with empty map root", logID)
 
